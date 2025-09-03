@@ -1,0 +1,62 @@
+{
+	"compiler": {
+		"version": "0.8.30+commit.73712a01"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "ERC721",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "owner",
+						"type": "address"
+					}
+				],
+				"stateMutability": "payable",
+				"type": "constructor"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"NftMint.sol": "ERC721Mint"
+		},
+		"evmVersion": "prague",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"NftMint.sol": {
+			"keccak256": "0x4fe874a8c7e2534c1a2bfac4b33c012ed5d364f3c29dabf943d3be7c115e7c72",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://8a872c18a18954ed8516ed4ffd453e5fcb7eea74461775506bd1cfd263ce6707",
+				"dweb:/ipfs/QmTryxqV3Am1GEKnzqsnsZtDDSv66pSfiBJYMCZ1kGV5zA"
+			]
+		}
+	},
+	"version": 1
+}
