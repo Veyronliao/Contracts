@@ -1,80 +1,77 @@
-import { ethers } from "ethers";
-import dotenv from "dotenv";
+const { ethers } = require("hardhat");
+const throttle = require('lodash.throttle') //安装throttle：npm install lodash.throttle
+//wss://eth-mainnet.g.alchemy.com/v2/AXk8ifAkCTMh3R4QaKveR 
+const ALCHEMY_MAINNET_WSSURL = 'wss://eth-mainnet.g.alchemy.com/v2/AXk8ifAkCTMh3R4QaKveR';
+const provider = new ethers.WebSocketProvider(ALCHEMY_MAINNET_WSSURL);
+//判断交易是否值得进行三明治攻击uniswapv2:
+function simulateSwap(x, y, dx) {
+  const newY = (x * y) / (x + dx);
+  const dy = y - newY;
+  return { dy, newX: x + dx, newY };
+}
 
-dotenv.config();
+function isProfitableSandwich(pool, victimIn, attackerIn, gasCost) {
+  const { x, y } = pool;
 
-const WS_URL = process.env.MAINNET_WS;
-if (!WS_URL) throw new Error("请配置 MAINNET_WS");
+  // 1. attacker frontrun
+  const front = simulateSwap(x, y, attackerIn);
 
-const provider = new ethers.WebSocketProvider(WS_URL);
+  // 2. victim after attacker
+  const victim = simulateSwap(front.newX, front.newY, victimIn);
 
-// Uniswap V2 Router
-const ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D";
+  // 3. attacker backrun (sell)
+  const back = simulateSwap(
+    victim.newX,
+    victim.newY,
+    front.dy // attacker received WETH
+  );
 
-// 只解析 swap 相关方法
-const routerAbi = [
-  "function swapExactETHForTokens(uint amountOutMin,address[] path,address to,uint deadline)",
-  "function swapExactTokensForETH(uint amountIn,uint amountOutMin,address[] path,address to,uint deadline)",
-  "function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] path,address to,uint deadline)",
-  "function swapETHForExactTokens(uint amountOut,address[] path,address to,uint deadline)"
-];
+  const attackerOut = back.dy;
 
-const iface = new ethers.Interface(routerAbi);
+  const profit = attackerOut - attackerIn - gasCost;
 
-console.log("✅ 正在监听以太坊主网真实 mempool...");
-console.log("节点:", WS_URL);
+  return { profit, attackerOut, front, victim, back };
+}
+//调用isProfitableSandwich：
+// const res = isProfitableSandwich(
+//   { x, y },                 // pool reserves
+//   victimAmountIn,           // victim Δx
+//   ethers.parseUnits("10"),  // attacker small frontrun
+//   gasCost
+// );
 
-provider.on("pending", async (txHash) => {
-  try {
-    const tx = await provider.getTransaction(txHash);
-    if (!tx || !tx.to || !tx.data) return;
-
-    // 只监听 Uniswap Router
-    if (tx.to.toLowerCase() !== ROUTER.toLowerCase()) return;
-
-    let parsed;
-
-    try {
-      parsed = iface.parseTransaction({
-        data: tx.data,
-        value: tx.value
-      });
-    } catch {
-      return; // 非 swap 交易直接忽略
+// if (res.profit > 0n) {
+//   console.log("值得三明治攻击，利润:", res.profit.toString());
+// }
+const iface = new ethers.Interface([
+    "function transfer(address, uint) public returns (bool)",
+])
+function handleBigInt(key, value) {
+    if (typeof value === "bigint") {
+        return value.toString() + "n"; // or simply return value.toString();
     }
+    return value;
+}
+const selector = iface.getFunction("transfer").selector
+async function main() {
+    let j = 0
+    provider.on("pending", throttle(async (txHash) => {
+        if (txHash && j <= 100) {
+            // 获取tx详情
+            let tx = await provider.getTransaction(txHash);
+            j++;
+            if (tx !== null && tx.data.indexOf(selector) !== -1) {
+                console.log(`[${(new Date).toLocaleTimeString()}]监听到第${j + 1}个pending交易:${txHash}`)
+                console.log(`打印解码交易详情:${JSON.stringify(iface.parseTransaction(tx), handleBigInt, 2)}`)
+                console.log(`转账目标地址:${iface.parseTransaction(tx).args[0]}`)
+                console.log(`转账金额:${ethers.formatEther(iface.parseTransaction(tx).args[1])}`)
+                provider.removeListener('pending', this)
+            }
 
-    const method = parsed.name;
-    const args = parsed.args;
+        }
+    }, 1000));
+}
 
-    console.log("\n🔥 Pending Swap 交易捕获:");
-    console.log("TX:", tx.hash);
-    console.log("From:", tx.from);
-    console.log("Method:", method);
-    console.log("Gas Price:", tx.gasPrice?.toString());
-    console.log("Value:", ethers.formatEther(tx.value));
+main().catch(console.error);
 
-    // 解析 path
-    let path;
-    if (method === "swapExactETHForTokens" || method === "swapETHForExactTokens") {
-      path = args[1];
-    } else {
-      path = args[2];
-    }
-    
-
-    console.log("Path:", path.join(" -> "));
-
-  } catch (err) {
-    console.log("监听错误:", err.message);
-  }
-});
-
-provider._websocket.on("close", () => {
-  console.error("WebSocket 断开，正在退出...");
-  process.exit(1);
-});
-
-///主网真实 mempool 监听
-///监听 mempool → 捕获 pending tx → 解码 → 判断是否为 swap → 分析滑点 → 判断池子流动性 → 估算价格冲击 → 标记目标
-
-//运行：node mainnet_mempool_listener.js
+//npx hardhat run scripts/sandwich_simulation.js
